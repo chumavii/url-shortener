@@ -8,6 +8,27 @@ using UrlShortener.Data;
 using UrlShortener.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Logger
+builder.Host.UseSerilog((context, config) =>
+{
+    config
+    .Enrich.FromLogContext()
+    .Enrich.WithCorrelationId()
+    .ReadFrom.Configuration(context.Configuration);
+});
+
+// Correlation Id
+builder.Services.AddDefaultCorrelationId(options =>
+{
+    options.UpdateTraceIdentifier = true;
+    options.AddToLoggingScope = true;
+    options.IncludeInResponse = true;
+});
+
+// Database & Redis
+builder.Services.AddDbContext<ApplicationDbContext>(options => 
+    options.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
 var redisHost = builder.Configuration["Redis:Host"] ?? "localhost:6379";
 var redis = ConnectionMultiplexer.Connect(new ConfigurationOptions
 {
@@ -16,9 +37,13 @@ var redis = ConnectionMultiplexer.Connect(new ConfigurationOptions
     ConnectRetry = 5,          
     ConnectTimeout = 5000       
 });
-
 builder.Services.AddSingleton<IConnectionMultiplexer>(redis);
-builder.Services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
+
+// Health Check Service
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<ApplicationDbContext>("Database")
+    .AddRedis(redis);
+
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
@@ -27,16 +52,6 @@ builder.Services.AddSwaggerGen(options =>
     var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
     options.IncludeXmlComments(xmlPath);
     options.SwaggerDoc("v1", new() { Title = "URL Shortener API", Version = "v1" });
-});
-
-
-//CORS
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("AllowAll", policy =>
-    {
-        policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
-    });
 });
 
 //Rate Limiter Service
@@ -68,34 +83,26 @@ builder.Services.AddRateLimiter(option =>
     });
 });
 
-//Health Check Service
-builder.Services.AddHealthChecks()
-    .AddDbContextCheck<ApplicationDbContext>("Database")
-    .AddRedis(redis);
-
-//Correlation Id
-builder.Services.AddDefaultCorrelationId(options =>
+//CORS
+builder.Services.AddCors(options =>
 {
-    options.AddToLoggingScope = true;
-    options.UpdateTraceIdentifier = true;
-    options.IncludeInResponse = true;
-});
-
-//Logger
-builder.Host.UseSerilog((context, config) =>
-{
-    config
-    .Enrich.FromLogContext()
-    .Enrich.WithCorrelationId()
-    .ReadFrom.Configuration(context.Configuration);
+    options.AddPolicy("AllowAll", policy =>
+    {
+        policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
+    });
 });
 
 builder.WebHost.UseUrls("http://+:80");
 
 var app = builder.Build();
 
+app.UseSerilogRequestLogging();
+app.UseMiddleware<GlobalExceptionMiddleware>();
+app.UseCorrelationId();
 app.MapHealthChecks("/health");
-
+app.UseRateLimiter();
+app.UseCors("AllowAll");
+app.UseHttpsRedirection();
 if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Test"))
 {
     //Apply pending migrations if any
@@ -120,13 +127,6 @@ if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Test"))
         options.SwaggerEndpoint("v1/swagger.json", "UrlShorterner API");
     });
 }
-
-app.UseCorrelationId();
-app.UseSerilogRequestLogging();
-app.UseMiddleware<GlobalExceptionMiddleware>();
-app.UseCors("AllowAll");
-app.UseRateLimiter();
-//app.UseHttpsRedirection();
 app.UseAuthorization();
 app.MapControllers();
 app.Run();

@@ -30,7 +30,6 @@ namespace UrlShortener.Controllers
         /// </summary>
         /// <returns>Short url but only short code is posted to db.</returns>
         [HttpPost]
-        [ProducesResponseType(typeof(UrlMappingDto), StatusCodes.Status302Found)]
         [ProducesResponseType(typeof(UrlMappingDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
@@ -61,7 +60,7 @@ namespace UrlShortener.Controllers
 
             //If record is in db but not cache, add to cache then return short url
             var record = await _context.UrlMappings.FirstOrDefaultAsync(x => x.OriginalUrl == originalUrl);
-            if (record != null)
+            if (record != null && record.OriginalUrl != null)
             {
                 try
                 {
@@ -83,13 +82,23 @@ namespace UrlShortener.Controllers
             //short code needs to be unique before adding to db
             string shortCode;
             bool codeExists;
+            int retryCount = 0;
+            int maxRetries = 3;
+
             do
             {
-                _logger.LogInformation("Generating new short code.");
+                _logger.LogDebug("Generating new short code.");
                 shortCode = Url64Helper.Encode(originalUrl + Guid.NewGuid());
-                codeExists = _context.UrlMappings.Any(c => c.ShortCode == shortCode);
+                codeExists = await _context.UrlMappings.AnyAsync(c => c.ShortCode == shortCode);
+                retryCount++;
             }
-            while (codeExists);
+            while (codeExists && retryCount <= maxRetries);
+
+            if (retryCount >= maxRetries)
+            {
+                _logger.LogError("Failed to generate unique short code");
+                return StatusCode(StatusCodes.Status500InternalServerError);
+            }
 
             var mapping = new UrlMapping
             {
@@ -98,10 +107,24 @@ namespace UrlShortener.Controllers
                 CreatedAt = DateTime.UtcNow
             };
 
-            _context.UrlMappings.Add(mapping);
-            await _context.SaveChangesAsync();
-            await db.StringSetAsync(shortCode, originalUrl);
-            await db.StringSetAsync($"url:{originalUrl}", shortCode);
+            try
+            {
+                _context.UrlMappings.Add(mapping);
+                await _context.SaveChangesAsync();
+
+                await db.StringSetAsync(shortCode, originalUrl);
+                await db.StringSetAsync($"url:{originalUrl}", shortCode);
+            }
+            catch (DbUpdateException e) when (e.InnerException?.Message.Contains("duplicate") ?? false)
+            {
+                _logger.LogWarning(e, $"Duplicate short code generated {shortCode}. Retrying...");
+                await ShortenUrl(model);
+            }
+            catch (Exception e)
+            {
+                _logger.LogError(e, $"Failed to cache URL mapping for {originalUrl}");
+            }
+
             var result = new ShortenUrlResposeDto
             {
                 ShortUrl = $"{Request.Scheme}://{Request.Host}/{shortCode}"
@@ -139,7 +162,7 @@ namespace UrlShortener.Controllers
                 }
                 catch (Exception e)
                 {
-                    Console.WriteLine(e.Message);
+                    _logger.LogError(e.Message, $"Exception occurred while retrieving cached URL for short code: {shortCode}");
                 }
             }
 
