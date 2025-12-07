@@ -138,6 +138,6 @@ Your CI pipeline automatically:
 ## Author
 
 **Chuma**  
-Backend Engineer • Automation Developer • Cloud Enthusiast  
+Backend Engineer
 [GitHub @chumavii](https://github.com/chumavii)
 
