@@ -2,6 +2,6 @@
 {
     public class ShortenUrlResposeDto
     {
-        public string? ShortUrl { get; set; }
+        public required string ShortUrl { get; set; }
     }
 }

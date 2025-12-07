@@ -27,15 +27,26 @@ builder.Services.AddDefaultCorrelationId(options =>
 });
 
 // Database & Redis
-builder.Services.AddDbContext<ApplicationDbContext>(options => 
-    options.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
+builder.Services.AddDbContext<ApplicationDbContext>(options =>
+{
+    options.UseNpgsql(
+        builder.Configuration.GetConnectionString("Default"),
+        npgsql =>
+        {
+            npgsql.EnableRetryOnFailure(
+                maxRetryCount: 10,
+                maxRetryDelay: TimeSpan.FromSeconds(5),
+                errorCodesToAdd: null
+            );
+        });
+});
 var redisHost = builder.Configuration["Redis:Host"] ?? "localhost:6379";
 var redis = ConnectionMultiplexer.Connect(new ConfigurationOptions
 {
     EndPoints = { redisHost },
     AbortOnConnectFail = false, // keeps retrying until ready
-    ConnectRetry = 5,          
-    ConnectTimeout = 5000       
+    ConnectRetry = 5,
+    ConnectTimeout = 5000
 });
 builder.Services.AddSingleton<IConnectionMultiplexer>(redis);
 

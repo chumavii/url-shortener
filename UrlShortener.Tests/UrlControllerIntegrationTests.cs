@@ -23,7 +23,7 @@ namespace UrlShortener.Tests
         public async Task ShortenUrl_ShouldShortenUrl()
         {
             //Arrange
-            var longUrl = "https://github.com/chumavii/UrlShortener/tree/main";
+            var longUrl = "https://testurl.com/thistestcase";
 
             //Act
             var response = await _client.PostAsJsonAsync("/", new { originalUrl = longUrl });
@@ -50,7 +50,7 @@ namespace UrlShortener.Tests
         public async Task ExpandUrl_ShouldReturnOriginalUrl()
         {
             // Arrange
-            var longUrl = "https://github.com/chumavii/UrlShortener/tree/main";
+            var longUrl = "https://github.com/chumavii/UrlShortener/";
 
             var shortenResponse = await _client.PostAsJsonAsync("/", new { originalUrl = longUrl });
             shortenResponse.EnsureSuccessStatusCode();

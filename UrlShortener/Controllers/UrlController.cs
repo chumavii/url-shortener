@@ -1,7 +1,10 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using CorrelationId;
+using CorrelationId.Abstractions;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using StackExchange.Redis;
+using System.Threading.Tasks;
 using UrlShortener.Data;
 using UrlShortener.Models;
 using UrlShortener.Models.DTOs;
@@ -17,12 +20,18 @@ namespace UrlShortener.Controllers
         private readonly ApplicationDbContext _context;
         public readonly IConnectionMultiplexer _redis;
         private readonly ILogger<UrlController> _logger;
+        private readonly ICorrelationContextAccessor _correlationAccessor;
 
-        public UrlController(ApplicationDbContext context, IConnectionMultiplexer redis, ILogger<UrlController> logger)
+        public UrlController(
+            ApplicationDbContext context,
+            IConnectionMultiplexer redis,
+            ILogger<UrlController> logger,
+            ICorrelationContextAccessor correlationId)
         {
             _context = context;
             _redis = redis;
             _logger = logger;
+            _correlationAccessor = correlationId;
         }
 
         /// <summary>
@@ -35,102 +44,82 @@ namespace UrlShortener.Controllers
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult> ShortenUrl(UrlMappingDto model)
         {
-            if (string.IsNullOrEmpty(model.OriginalUrl))
-                return BadRequest("URL cannot be empty");
+            var correlationId = _correlationAccessor.CorrelationContext?.CorrelationId;
+            _logger.LogInformation("NEW REQUEST: {CorrelationID}", correlationId);
 
-            var originalUrl = EnsureUrlHasScheme(model.OriginalUrl);
+            // Scheme validations
+            var longUrl = EnsureUrlHasScheme(model.OriginalUrl);
 
-            //Url scheme needs to be valid
-            if (!Uri.TryCreate(originalUrl, UriKind.Absolute, out var uriResult) ||
+            if (!Uri.TryCreate(longUrl, UriKind.Absolute, out var uriResult) ||
                 (uriResult.Scheme != Uri.UriSchemeHttp && uriResult.Scheme != Uri.UriSchemeHttps))
                 return BadRequest("Invalid URL format.");
 
-            //If record already exists in cache return short url
-            var db = _redis.GetDatabase();
-            var cachedCode = await db.StringGetAsync($"url:{originalUrl}");
-            if (!cachedCode.IsNullOrEmpty)
+            // If record already exists in cache return short url
+            try
             {
-                _logger.LogInformation($"Cache hit for short code: {cachedCode}");
-                var resultDto = new ShortenUrlResposeDto
+                var cachedCode = await CheckRedis(_redis, null, longUrl);
+                if (!cachedCode.IsNullOrEmpty)
                 {
-                    ShortUrl = $"{Request.Scheme}://{Request.Host}/{cachedCode}"
-                };
-                return Ok(resultDto);
+                    _logger.LogInformation($"Cache hit for url: {longUrl} <=> {cachedCode}");
+                    return Ok(CreateShortenUrlResponse(cachedCode!, HttpContext));
+                }
+            }
+            catch (Exception e)
+            {
+                _logger.LogError(e, "An error occured with redis");
             }
 
-            //If record is in db but not cache, add to cache then return short url
-            var record = await _context.UrlMappings.FirstOrDefaultAsync(x => x.OriginalUrl == originalUrl);
-            if (record != null && record.OriginalUrl != null)
+            // If record is in db but not cache, add to cache then return short url
+            _logger.LogInformation("Checking db for record...");
+            var record = await _context.UrlMappings.FirstOrDefaultAsync(x => x.OriginalUrl == longUrl);
+            if (record != null && record.OriginalUrl != null && record.ShortCode != null)
             {
                 try
                 {
-                    _logger.LogInformation($"Cache miss for short code: {cachedCode}. Caching now.");
-                    await db.StringSetAsync($"url:{record.OriginalUrl}", record.ShortCode);
-                    await db.StringSetAsync(record.ShortCode, record.OriginalUrl);
+                    _logger.LogInformation($"Cache miss for url: {record.OriginalUrl}");
+                    await AddRecordToCache(record.ShortCode, record.OriginalUrl, _redis, _logger);
+                    return Ok(CreateShortenUrlResponse(record.ShortCode, HttpContext));
                 }
                 catch (Exception e)
                 {
-                    _logger.LogError($"Failed to cache URL mapping for {record.OriginalUrl}", e.Message);
-                    var resultDto = new ShortenUrlResposeDto
-                    {
-                        ShortUrl = $"{Request.Scheme}://{Request.Host}/{record.ShortCode}"
-                    };
-                    return Ok(resultDto);
+                    _logger.LogError(e, $"Failed to cache URL mapping for {record.OriginalUrl}");
+                    return Ok(CreateShortenUrlResponse(record.ShortCode, HttpContext));
                 }
             }
 
-            //short code needs to be unique before adding to db
-            string shortCode;
-            bool codeExists;
-            int retryCount = 0;
-            int maxRetries = 3;
-
-            do
-            {
-                _logger.LogDebug("Generating new short code.");
-                shortCode = Url64Helper.Encode(originalUrl + Guid.NewGuid());
-                codeExists = await _context.UrlMappings.AnyAsync(c => c.ShortCode == shortCode);
-                retryCount++;
-            }
-            while (codeExists && retryCount <= maxRetries);
-
-            if (retryCount >= maxRetries)
-            {
-                _logger.LogError("Failed to generate unique short code");
-                return StatusCode(StatusCodes.Status500InternalServerError);
-            }
+            // Short code needs to be unique before adding to db
+            var shortCode = await GenerateShortCode(longUrl, _context);
 
             var mapping = new UrlMapping
             {
-                OriginalUrl = originalUrl,
+                OriginalUrl = longUrl,
                 ShortCode = shortCode,
                 CreatedAt = DateTime.UtcNow
             };
 
+            // Save record in db 
             try
             {
-                _context.UrlMappings.Add(mapping);
+                await _context.UrlMappings.AddAsync(mapping);
                 await _context.SaveChangesAsync();
-
-                await db.StringSetAsync(shortCode, originalUrl);
-                await db.StringSetAsync($"url:{originalUrl}", shortCode);
-            }
-            catch (DbUpdateException e) when (e.InnerException?.Message.Contains("duplicate") ?? false)
-            {
-                _logger.LogWarning(e, $"Duplicate short code generated {shortCode}. Retrying...");
-                await ShortenUrl(model);
             }
             catch (Exception e)
             {
-                _logger.LogError(e, $"Failed to cache URL mapping for {originalUrl}");
+                _logger.LogWarning(e, $"Duplicate short code generated {shortCode}.");
+                return StatusCode(StatusCodes.Status500InternalServerError);
             }
 
-            var result = new ShortenUrlResposeDto
+            // Cache record
+            try
             {
-                ShortUrl = $"{Request.Scheme}://{Request.Host}/{shortCode}"
-            };
-            
-            return Ok(result);
+                await AddRecordToCache(shortCode, longUrl, _redis, _logger);
+            }
+            catch (Exception e)
+            {
+                _logger.LogError(e, $"Failed to cache URL mapping for {longUrl}");
+            }
+
+            return Ok(CreateShortenUrlResponse(shortCode, HttpContext));
         }
 
 
@@ -144,53 +133,114 @@ namespace UrlShortener.Controllers
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult> RedirectToOriginal(string shortCode)
         {
-            var db = _redis.GetDatabase();
+            var correlationId = _correlationAccessor.CorrelationContext?.CorrelationId;
+            _logger.LogInformation("NEW REQUEST: {CorrelationID}", correlationId);
+
             var isBrowser = IsBrowserRequest(Request);
             _logger.LogInformation($"Is Browser: {isBrowser}");
-
-            //Check if shortcode is stored in cache and return original URL if it is
-            var cachedUrl = await db.StringGetAsync(shortCode);
-            if (!cachedUrl.IsNullOrEmpty)
+            try
             {
-                try
+                var cachedUrl = await CheckRedis(_redis, shortCode, null);
+                if (!cachedUrl.IsNullOrEmpty)
                 {
                     _logger.LogInformation($"Cache hit for short code: {shortCode}");
                     if (isBrowser)
-                        return Redirect(EnsureUrlHasScheme(cachedUrl.ToString()));
+                        return Redirect(cachedUrl.ToString());
 
                     return Ok(new { originalUrl = cachedUrl.ToString() });
                 }
-                catch (Exception e)
-                {
-                    _logger.LogError(e.Message, $"Exception occurred while retrieving cached URL for short code: {shortCode}");
-                }
             }
-
+            catch (Exception e)
+            {
+                _logger.LogWarning(e, "An error occured with Redis.");
+            }
+            
             //If record isnt in cache, check database 
-            var entity = await _context.UrlMappings.FirstOrDefaultAsync(x => x.ShortCode == shortCode);
-            if (entity == null) return NotFound("Short URL not found.");
+            var record = await _context.UrlMappings.FirstOrDefaultAsync(x => x.ShortCode == shortCode);
+            if (record == null) 
+                return NotFound("Short URL not found.");
 
             //Store record in cache
             _logger.LogInformation($"Cache miss for short code: {shortCode}. Caching now.");
-            await db.StringSetAsync(shortCode, entity.OriginalUrl);
+            try
+            {
+                await AddRecordToCache(record.ShortCode!, record.OriginalUrl, _redis, _logger);
+            }
+            catch (Exception e)
+            {
+                _logger.LogWarning(e, "An error occured with Redis.");
+            }
 
             if (isBrowser)
-                return Redirect(entity.OriginalUrl);
+                return Redirect(record.OriginalUrl);
 
-            return Ok(new { originalUrl = entity.OriginalUrl });
+            return Ok(new { originalUrl = record.OriginalUrl });
         }
 
 
         /*--------
          Helpers
         ---------*/
+        private async Task<string> GenerateShortCode(string longUrl, ApplicationDbContext _context)
+        {
+            string shortCode;
+            bool codeExists;
+            int retryCount = 0;
+            int maxRetries = 5;
+            do
+            {
+                _logger.LogInformation("Generating new short code...");
+                shortCode = Url64Helper.Encode(longUrl + Guid.NewGuid());
+                codeExists = await _context.UrlMappings.AnyAsync(c => c.ShortCode == shortCode);
+                retryCount++;
+            }
+            while (codeExists && retryCount <= maxRetries);
+
+            if (retryCount >= maxRetries)
+            {
+                _logger.LogError("Failed to generate unique short code.");
+                throw new Exception("Failed to generate unique short code.");
+            }
+            return shortCode;
+        }
+        private async Task<RedisValue> CheckRedis(IConnectionMultiplexer _redis, string? shortCode, string? longUrl)
+        {
+            _logger.LogInformation("Checking redis for record {LongUrl} <=> {ShortCode}...", longUrl, shortCode);
+            var db = _redis.GetDatabase();
+            if (!String.IsNullOrEmpty(shortCode))
+                return await db.StringGetAsync(shortCode);
+
+            if (!String.IsNullOrEmpty(longUrl))
+                return await db.StringGetAsync($"url:{longUrl}");
+
+            return RedisValue.Null;
+        }
+        private ShortenUrlResposeDto CreateShortenUrlResponse(string shortCode, HttpContext context)
+        {
+            return new ShortenUrlResposeDto
+            {
+                ShortUrl = DecorateShortCode(shortCode, context)
+            };
+        }
+        private string DecorateShortCode(string shortCode, HttpContext context)
+        {
+            return $"{context.Request.Scheme}://{context.Request.Host}/{shortCode}";
+        }
+        private static async Task AddRecordToCache(string shortCode, string longUrl, IConnectionMultiplexer _redis, ILogger _logger)
+        {
+            _logger.LogInformation("Caching record for {LongUrl}...", longUrl);
+            var db = _redis.GetDatabase();
+            await db.StringSetAsync($"url:{longUrl}", shortCode, TimeSpan.FromDays(30));
+            await db.StringSetAsync(shortCode, longUrl, TimeSpan.FromDays(30));
+            return;
+        }
         private string EnsureUrlHasScheme(string url)
         {
+            _logger.LogInformation("Validating URL scheme...");
             if (!url.StartsWith("http://") && !url.StartsWith("https://"))
                 return "https://" + url;
             return url;
         }
-
         private static bool IsBrowserRequest(HttpRequest request)
         {
             if (request == null)

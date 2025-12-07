@@ -13,9 +13,15 @@ namespace UrlShortener.Data
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             modelBuilder.Entity<UrlMapping>()
+                .Property(x => x.OriginalUrl)
+                .IsRequired();
+            modelBuilder.Entity<UrlMapping>()
                 .HasIndex(c => c.OriginalUrl)
                 .IsUnique();
 
+            modelBuilder.Entity<UrlMapping>()
+                .Property(x => x.ShortCode)
+                .IsRequired();
             modelBuilder.Entity<UrlMapping>()
                 .HasIndex(c => c.ShortCode)
                 .IsUnique();

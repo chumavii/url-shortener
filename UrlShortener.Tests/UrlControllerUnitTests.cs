@@ -1,3 +1,4 @@
+using CorrelationId.Abstractions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -50,7 +51,11 @@ namespace UrlShortener.Tests
                       .Returns(mockDatabase.Object);
 
             var mockLogger = new Mock<ILogger<UrlController>>();
-            _controller = new UrlController(_context, _redisMock.Object, mockLogger.Object);
+
+            var mockAccessor = new Mock<ICorrelationContextAccessor>();
+            mockAccessor.Setup(a => a.CorrelationContext);
+
+            _controller = new UrlController(_context, _redisMock.Object, mockLogger.Object, mockAccessor.Object);
             _client = factory.CreateClient();
         }
         [Fact]
@@ -74,7 +79,6 @@ namespace UrlShortener.Tests
 
             //Assert
             var badRequest = Assert.IsType<BadRequestObjectResult>(result);
-            Assert.Equal("URL cannot be empty", badRequest.Value);
         }
 
         [Fact]
