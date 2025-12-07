@@ -44,7 +44,7 @@ function App() {
                 const shortCode = match?.[1];
                 if (!shortCode) throw new Error("Invalid short URL format");
 
-                const response = await fetch(`${BASE_URL}${shortCode}`);
+                const response = await fetch(`${BASE_URL}/${shortCode}`);
                 if (!response.ok) throw new Error(await response.text());
                 const data: ExpandResponse = await response.json();
 
