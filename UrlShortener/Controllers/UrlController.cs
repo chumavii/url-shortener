@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using StackExchange.Redis;
-using System.Threading.Tasks;
 using UrlShortener.Data;
 using UrlShortener.Models;
 using UrlShortener.Models.DTOs;
@@ -60,7 +59,7 @@ namespace UrlShortener.Controllers
                 var cachedCode = await CheckRedis(_redis, null, longUrl);
                 if (!cachedCode.IsNullOrEmpty)
                 {
-                    _logger.LogInformation($"Cache hit for url: {longUrl} <=> {cachedCode}");
+                    _logger.LogInformation($"Cache hit for url: {longUrl.Replace(Environment.NewLine, "")} <=> {cachedCode}");
                     return Ok(CreateShortenUrlResponse(cachedCode!, HttpContext));
                 }
             }
@@ -116,7 +115,7 @@ namespace UrlShortener.Controllers
             }
             catch (Exception e)
             {
-                _logger.LogError(e, $"Failed to cache URL mapping for {longUrl}");
+                _logger.LogError(e, $"Failed to cache URL mapping for {longUrl.Replace(Environment.NewLine, "")}");
             }
 
             return Ok(CreateShortenUrlResponse(shortCode, HttpContext));
@@ -135,6 +134,7 @@ namespace UrlShortener.Controllers
         {
             var correlationId = _correlationAccessor.CorrelationContext?.CorrelationId;
             _logger.LogInformation("NEW REQUEST: {CorrelationID}", correlationId);
+            shortCode = shortCode.Replace(Environment.NewLine, "");
 
             var isBrowser = IsBrowserRequest(Request);
             _logger.LogInformation($"Is Browser: {isBrowser}");
@@ -205,7 +205,9 @@ namespace UrlShortener.Controllers
         }
         private async Task<RedisValue> CheckRedis(IConnectionMultiplexer _redis, string? shortCode, string? longUrl)
         {
-            _logger.LogInformation("Checking redis for record {LongUrl} <=> {ShortCode}...", longUrl, shortCode);
+            shortCode = shortCode?.Replace(Environment.NewLine, "");
+            longUrl = longUrl?.Replace(Environment.NewLine, "");
+            _logger.LogInformation("Checking redis for [USER INPUT]: {LongUrl} <=> {ShortCode}...", longUrl, shortCode);
             var db = _redis.GetDatabase();
             if (!String.IsNullOrEmpty(shortCode))
                 return await db.StringGetAsync(shortCode);
@@ -228,7 +230,8 @@ namespace UrlShortener.Controllers
         }
         private static async Task AddRecordToCache(string shortCode, string longUrl, IConnectionMultiplexer _redis, ILogger _logger)
         {
-            _logger.LogInformation("Caching record for {LongUrl}...", longUrl);
+            longUrl = longUrl.Replace(Environment.NewLine, "");
+            _logger.LogInformation("Caching record for [USER INPUT]: {LongUrl}...", longUrl);
             var db = _redis.GetDatabase();
             await db.StringSetAsync($"url:{longUrl}", shortCode, TimeSpan.FromDays(30));
             await db.StringSetAsync(shortCode, longUrl, TimeSpan.FromDays(30));
