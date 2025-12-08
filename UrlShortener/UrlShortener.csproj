@@ -29,6 +29,7 @@
 
   <ItemGroup>
     <None Include="..\.env" Link=".env" />
+    <None Include="..\.github\workflows\ci.dev.yml" Link="ci.dev.yml" />
     <None Include="..\.github\workflows\ci.yml" Link="ci.yml" />
     <None Include="..\.gitignore" Link=".gitignore" />
     <None Include="..\docker-compose.override.yml" Link="docker-compose.override.yml" />
@@ -39,6 +40,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Utilities.Encoding\Utilities.Encode.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Services\" />
   </ItemGroup>
 
 
