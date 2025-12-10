@@ -7,6 +7,7 @@ using StackExchange.Redis;
 using UrlShortener.Data;
 using UrlShortener.Models;
 using UrlShortener.Models.DTOs;
+using UrlShortener.Services.Interfaces;
 using Utilities.Encode;
 
 namespace UrlShortener.Controllers
@@ -20,17 +21,20 @@ namespace UrlShortener.Controllers
         public readonly IConnectionMultiplexer _redis;
         private readonly ILogger<UrlController> _logger;
         private readonly ICorrelationContextAccessor _correlationAccessor;
+        private readonly IExpandUrlService _expandUrl;
 
         public UrlController(
             ApplicationDbContext context,
             IConnectionMultiplexer redis,
             ILogger<UrlController> logger,
-            ICorrelationContextAccessor correlationId)
+            ICorrelationContextAccessor correlationId,
+            IExpandUrlService expandUrl)
         {
             _context = context;
             _redis = redis;
             _logger = logger;
             _correlationAccessor = correlationId;
+            _expandUrl = expandUrl;
         }
 
         /// <summary>
@@ -129,52 +133,23 @@ namespace UrlShortener.Controllers
         [ProducesResponseType(StatusCodes.Status302Found)]
         [ProducesResponseType(typeof(UrlMappingDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult> RedirectToOriginal(string shortCode)
+        public async Task<ActionResult> ExpandUrl(string shortCode)
         {
             var correlationId = _correlationAccessor.CorrelationContext?.CorrelationId;
             _logger.LogInformation("NEW REQUEST: {CorrelationID}", correlationId);
-            shortCode = shortCode.Replace(Environment.NewLine, "");
-
             var isBrowser = IsBrowserRequest(Request);
             _logger.LogInformation($"Is Browser: {isBrowser}");
-            try
-            {
-                var cachedUrl = await CheckRedis(_redis, shortCode, null);
-                if (!cachedUrl.IsNullOrEmpty)
-                {
-                    _logger.LogInformation($"Cache hit for short code: {shortCode}");
-                    if (isBrowser)
-                        return Redirect(cachedUrl.ToString());
 
-                    return Ok(new { originalUrl = cachedUrl.ToString() });
-                }
-            }
-            catch (Exception e)
-            {
-                _logger.LogWarning(e, "An error occured with Redis.");
-            }
-            
-            //If record isnt in cache, check database 
-            var record = await _context.UrlMappings.FirstOrDefaultAsync(x => x.ShortCode == shortCode);
-            if (record == null) 
-                return NotFound("Short URL not found.");
+            var result = await _expandUrl.ExpandUrl(shortCode);
 
-            //Store record in cache
-            _logger.LogInformation($"Cache miss for short code: {shortCode}. Caching now.");
-            try
-            {
-                await AddRecordToCache(record.ShortCode!, record.OriginalUrl, _redis, _logger);
-            }
-            catch (Exception e)
-            {
-                _logger.LogWarning(e, "An error occured with Redis.");
-            }
+            if (result == null)
+                return NotFound("Short URL not found");
 
             if (isBrowser)
-                return Redirect(record.OriginalUrl);
-
-            return Ok(new { originalUrl = record.OriginalUrl });
+                return Redirect(result.OriginalUrl);
+            return Ok(result);
         }
 
 

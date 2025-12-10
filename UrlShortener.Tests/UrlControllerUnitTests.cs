@@ -132,7 +132,7 @@ namespace UrlShortener.Tests
             _controller.Request.Headers[headerName] = headerValue;
 
             //Act
-            var result = await _controller.RedirectToOriginal("cEdfxXXd");
+            var result = await _controller.ExpandUrl("cEdfxXXd");
 
             //Assert
             Assert.IsType<OkObjectResult>(result);
@@ -157,7 +157,7 @@ namespace UrlShortener.Tests
             };
 
             //Act & Assert
-            var ex = await Assert.ThrowsAsync<ArgumentNullException>(() => _controller.RedirectToOriginal("cEdfxXXd"));
+            var ex = await Assert.ThrowsAsync<ArgumentNullException>(() => _controller.ExpandUrl("cEdfxXXd"));
 
             //Assert
             Assert.Contains("HTTP request cannot be null", ex.Message);

@@ -42,9 +42,5 @@
     <ProjectReference Include="..\Utilities.Encoding\Utilities.Encode.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="Services\" />
-  </ItemGroup>
-
 
 </Project>
