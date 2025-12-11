@@ -53,6 +53,7 @@ var redis = ConnectionMultiplexer.Connect(new ConfigurationOptions
 builder.Services.AddSingleton<IConnectionMultiplexer>(redis);
 
 builder.Services.AddScoped<IExpandUrlService, ExpandUrlService>();
+builder.Services.AddScoped<IShortenUrlService, ShortenUrlService>();
 
 // Health Check Service
 builder.Services.AddHealthChecks()
