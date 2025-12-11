@@ -6,6 +6,8 @@ using StackExchange.Redis;
 using System.Threading.RateLimiting;
 using UrlShortener.Data;
 using UrlShortener.Middleware;
+using UrlShortener.Services;
+using UrlShortener.Services.Interfaces;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -49,6 +51,9 @@ var redis = ConnectionMultiplexer.Connect(new ConfigurationOptions
     ConnectTimeout = 5000
 });
 builder.Services.AddSingleton<IConnectionMultiplexer>(redis);
+
+builder.Services.AddScoped<IExpandUrlService, ExpandUrlService>();
+builder.Services.AddScoped<IShortenUrlService, ShortenUrlService>();
 
 // Health Check Service
 builder.Services.AddHealthChecks()
