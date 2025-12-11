@@ -5,7 +5,7 @@ VisualStudioVersion = 17.14.36212.18
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UrlShortener", "UrlShortener\UrlShortener.csproj", "{ED38BD41-AD8F-4E92-8653-EDE271175522}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Utilities.Encode", "Utilities.Encoding\Utilities.Encode.csproj", "{388C13E6-B848-4ACE-B5C8-FE40B8C22916}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Utilities", "UrlShortener.Utilities\Utilities.csproj", "{388C13E6-B848-4ACE-B5C8-FE40B8C22916}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UrlShortener.Tests", "UrlShortener.Tests\UrlShortener.Tests.csproj", "{74D9890C-9F38-46F4-A144-DEDB6AD90ECA}"
 EndProject

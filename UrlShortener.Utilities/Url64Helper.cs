@@ -1,7 +1,7 @@
 ﻿using System.Security.Cryptography;
 using System.Text;
 
-namespace Utilities.Encode
+namespace Utilities
 {
     public static class Url64Helper
     {

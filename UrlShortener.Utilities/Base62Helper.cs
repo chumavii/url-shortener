@@ -1,6 +1,6 @@
 ﻿using System.Text;
 
-namespace Utilities.Encode
+namespace Utilities
 {
     public static class Base62Helper
     {
