@@ -7,6 +7,6 @@ namespace UrlShortener.Services.Interfaces
 {
     public interface IExpandUrlService
     {
-        Task<ExpandUrlResponseDto?> ExpandUrl(string shortCode);
+        Task<ExpandUrlResponseDto?> ExpandUrlAsync(string shortCode);
     }
 }

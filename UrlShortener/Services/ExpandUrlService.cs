@@ -20,7 +20,7 @@ namespace UrlShortener.Services
             _logger = logger;
         }
 
-        public async Task<ExpandUrlResponseDto?> ExpandUrl(string shortCode)
+        public async Task<ExpandUrlResponseDto?> ExpandUrlAsync(string shortCode)
         {
             shortCode = shortCode.Replace(Environment.NewLine, "");
 
@@ -64,8 +64,6 @@ namespace UrlShortener.Services
                 throw new Exception("An error ocurred.");
             }
 
-            return null;
-
         }
 
 
@@ -76,11 +74,11 @@ namespace UrlShortener.Services
         {
             shortCode = shortCode.Replace(Environment.NewLine, "");
             _logger.LogInformation("Checking redis for [USER INPUT]: {ShortCode}...", shortCode);
+
             var db = _redis.GetDatabase();
-            
-            if (String.IsNullOrEmpty(shortCode))
-                return RedisValue.Null;
-            return await db.StringGetAsync(shortCode);
+            var cacheRecord = await db.StringGetAsync(shortCode);
+
+            return cacheRecord;
         }
 
         private async Task<UrlMapping?> CheckDatabase(ApplicationDbContext _dbContext, string shortCode)
