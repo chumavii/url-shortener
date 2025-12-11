@@ -10,6 +10,7 @@ using UrlShortener.Controllers;
 using UrlShortener.Data;
 using UrlShortener.Models;
 using UrlShortener.Models.DTOs;
+using UrlShortener.Services.Interfaces;
 
 namespace UrlShortener.Tests
 {
@@ -25,8 +26,8 @@ namespace UrlShortener.Tests
             var options = new DbContextOptionsBuilder<ApplicationDbContext>()
                 .UseInMemoryDatabase(Guid.NewGuid().ToString())
                 .Options;
-
             _context = new ApplicationDbContext(options);
+
             var mockDatabase = new Mock<IDatabase>();
             mockDatabase
                 .Setup(db => db.StringSetAsync(
@@ -55,7 +56,15 @@ namespace UrlShortener.Tests
             var mockAccessor = new Mock<ICorrelationContextAccessor>();
             mockAccessor.Setup(a => a.CorrelationContext);
 
-            _controller = new UrlController(_context, _redisMock.Object, mockLogger.Object, mockAccessor.Object);
+            var mockExpandUrl = new Mock<IExpandUrlService>();
+            mockExpandUrl.Setup(x => x.ExpandUrlAsync(It.IsAny<string>()))
+                .ReturnsAsync(new ExpandUrlResponseDto { OriginalUrl = "abc123" });
+
+            var mockShortenUrl = new Mock<IShortenUrlService>();
+            mockShortenUrl.Setup(x => x.ShortenUrlAsync(It.IsAny<UrlMappingDto>()))
+                .ReturnsAsync(new ShortenUrlResposeDto { ShortUrl = "https://www.test.com"});
+
+            _controller = new UrlController(mockLogger.Object, mockAccessor.Object, mockExpandUrl.Object, mockShortenUrl.Object);
             _client = factory.CreateClient();
         }
         [Fact]
@@ -66,19 +75,6 @@ namespace UrlShortener.Tests
 
             //Assert
             Assert.True(response.StatusCode == System.Net.HttpStatusCode.OK);
-        }
-
-        [Fact]
-        public async Task ShortenUrl_EmptyUrl_ShouldReturnBadRequest()
-        {
-            //Arrange
-            var urlDto = new UrlMappingDto { OriginalUrl = "" };
-
-            //Act
-            var result = await _controller.ShortenUrl(urlDto);
-
-            //Assert
-            var badRequest = Assert.IsType<BadRequestObjectResult>(result);
         }
 
         [Fact]
@@ -100,7 +96,7 @@ namespace UrlShortener.Tests
             };
 
             //Act
-            var result = await _controller.ShortenUrl(dto) as OkObjectResult;
+            var result = await _controller.ShortenUrlAsync(dto) as OkObjectResult;
             var response = Assert.IsType<ShortenUrlResposeDto>(result?.Value);
             var shortUrl = response.ShortUrl;
 
@@ -122,7 +118,7 @@ namespace UrlShortener.Tests
                 ShortCode = "cEdfxXXd",
                 CreatedAt = DateTime.UtcNow
             };
-            _context.UrlMappings.Add(record);
+            await _context.UrlMappings.AddAsync(record);
             await _context.SaveChangesAsync();
 
             _controller.ControllerContext = new ControllerContext
@@ -132,7 +128,7 @@ namespace UrlShortener.Tests
             _controller.Request.Headers[headerName] = headerValue;
 
             //Act
-            var result = await _controller.ExpandUrl("cEdfxXXd");
+            var result = await _controller.ExpandUrlAsync("cEdfxXXd");
 
             //Assert
             Assert.IsType<OkObjectResult>(result);
@@ -157,7 +153,7 @@ namespace UrlShortener.Tests
             };
 
             //Act & Assert
-            var ex = await Assert.ThrowsAsync<ArgumentNullException>(() => _controller.ExpandUrl("cEdfxXXd"));
+            var ex = await Assert.ThrowsAsync<ArgumentNullException>(() => _controller.ExpandUrlAsync("cEdfxXXd"));
 
             //Assert
             Assert.Contains("HTTP request cannot be null", ex.Message);

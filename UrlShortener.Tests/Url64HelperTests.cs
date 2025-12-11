@@ -1,4 +1,4 @@
-using Utilities.Encode;
+using Utilities;
 using Xunit;
 using Microsoft.AspNetCore.Mvc;
 
