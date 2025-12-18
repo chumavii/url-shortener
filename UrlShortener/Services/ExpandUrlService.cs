@@ -9,9 +9,9 @@ namespace UrlShortener.Services
 {
     public class ExpandUrlService : IExpandUrlService
     {
-        private ApplicationDbContext _dbContext;
-        private IConnectionMultiplexer _redis;
-        private ILogger<ExpandUrlService> _logger;
+        private readonly ApplicationDbContext _dbContext;
+        private readonly IConnectionMultiplexer _redis;
+        private readonly ILogger<ExpandUrlService> _logger;
 
         public ExpandUrlService(ApplicationDbContext dbContext, IConnectionMultiplexer redis, ILogger<ExpandUrlService> logger)
         {
@@ -27,41 +27,41 @@ namespace UrlShortener.Services
             // Check Redis
             try
             {
-                var cacheRecord = await CheckRedis(_redis, shortCode);
+                var cacheRecord = await CheckRedis(shortCode);
                 if (!cacheRecord.IsNullOrEmpty)
                 {
                     _logger.LogInformation($"Cache hit for short code: {shortCode}");
-                    return CreateExpandUrResponse(cacheRecord.ToString());
+                    return CreateExpandUrlResponse(cacheRecord.ToString());
                 }
                 _logger.LogInformation($"Cache miss for short code: {shortCode}");
             }
             catch (Exception e)
             {
-                _logger.LogError(e, "An error ocurred.");
+                _logger.LogError(e, "An error occurred.");
             }
 
 
             // If cache miss check database
             try
             {
-                var dbRecord = await CheckDatabase(_dbContext, shortCode);
+                var dbRecord = await CheckDatabase(shortCode);
                 if (dbRecord == null)
                 {
                     _logger.LogInformation("Short code [{ShortCode}] not found.", shortCode);
                     return null;
                 }
                 await CacheRecord(_redis, dbRecord.ShortCode, dbRecord.OriginalUrl);
-                return CreateExpandUrResponse(dbRecord.OriginalUrl);
+                return CreateExpandUrlResponse(dbRecord.OriginalUrl);
             }
             catch (DbUpdateException d)
             {
-                _logger.LogError(d, "An error ocurred with the Database.");
-                throw new Exception("An error ocurred.");
+                _logger.LogError(d, "An error occurred with the Database.");
+                throw new Exception("An error occurred.");
             }
             catch (Exception e)
             {
-                _logger.LogError(e, "An error ocurred.");
-                throw new Exception("An error ocurred.");
+                _logger.LogError(e, "An error occurred.");
+                throw new Exception("An error occurred.");
             }
 
         }
@@ -70,7 +70,7 @@ namespace UrlShortener.Services
         /*--------
          Helpers
         ---------*/
-        private async Task<RedisValue> CheckRedis(IConnectionMultiplexer _redis, string shortCode)
+        private async Task<RedisValue> CheckRedis(string shortCode)
         {
             shortCode = shortCode.Replace(Environment.NewLine, "");
             _logger.LogInformation("Checking redis for [USER INPUT]: {ShortCode}...", shortCode);
@@ -81,7 +81,7 @@ namespace UrlShortener.Services
             return cacheRecord;
         }
 
-        private async Task<UrlMapping?> CheckDatabase(ApplicationDbContext _dbContext, string shortCode)
+        private async Task<UrlMapping?> CheckDatabase(string shortCode)
         {
             var record = await _dbContext.UrlMappings.FirstOrDefaultAsync(x => x.ShortCode == shortCode);
             return record;
@@ -103,7 +103,7 @@ namespace UrlShortener.Services
             return;
         }
 
-        private ExpandUrlResponseDto CreateExpandUrResponse(string longUrl)
+        private ExpandUrlResponseDto CreateExpandUrlResponse(string longUrl)
         {
             return new ExpandUrlResponseDto { OriginalUrl = longUrl };
         }

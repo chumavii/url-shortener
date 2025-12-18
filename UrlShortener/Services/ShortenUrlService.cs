@@ -12,15 +12,15 @@ namespace UrlShortener.Services
     {
         private readonly ApplicationDbContext _dbContext;
         private readonly IConnectionMultiplexer _redis;
-        private readonly ILogger<ExpandUrlService> _logger;
-        public ShortenUrlService(ApplicationDbContext dbContext, IConnectionMultiplexer redis, ILogger<ExpandUrlService> logger)
+        private readonly ILogger<ShortenUrlService> _logger;
+        public ShortenUrlService(ApplicationDbContext dbContext, IConnectionMultiplexer redis, ILogger<ShortenUrlService> logger)
         {
             _dbContext = dbContext;
             _redis = redis;
             _logger = logger;
         }
 
-        public async Task<ShortenUrlResposeDto?> ShortenUrlAsync(UrlMappingDto model)
+        public async Task<ShortenUrlResponseDto?> ShortenUrlAsync(UrlMappingDto model)
         {
             // Scheme validations
             var longUrl = EnsureUrlHasScheme(model.OriginalUrl);
@@ -147,7 +147,7 @@ namespace UrlShortener.Services
                 codeExists = await _dbContext.UrlMappings.AnyAsync(c => c.ShortCode == shortCode);
                 retryCount++;
             }
-            while (codeExists && retryCount <= maxRetries);
+            while (codeExists && retryCount < maxRetries);
 
             if (retryCount >= maxRetries)
             {
@@ -156,9 +156,9 @@ namespace UrlShortener.Services
             }
             return shortCode;
         }
-        private ShortenUrlResposeDto CreateShortenUrlResponse(string shortCode)
+        private ShortenUrlResponseDto CreateShortenUrlResponse(string shortCode)
         {
-            return new ShortenUrlResposeDto
+            return new ShortenUrlResponseDto
             {
                 ShortUrl = shortCode
             };

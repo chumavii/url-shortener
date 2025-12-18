@@ -1,7 +1,4 @@
-﻿using StackExchange.Redis;
-using UrlShortener.Data;
-using UrlShortener.Models;
-using UrlShortener.Models.DTOs;
+﻿using UrlShortener.Models.DTOs;
 
 namespace UrlShortener.Services.Interfaces
 {
