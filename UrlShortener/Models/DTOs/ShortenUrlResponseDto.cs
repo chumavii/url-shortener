@@ -1,6 +1,6 @@
 ﻿namespace UrlShortener.Models.DTOs
 {
-    public class ShortenUrlResposeDto
+    public class ShortenUrlResponseDto
     {
         public required string ShortUrl { get; set; }
     }

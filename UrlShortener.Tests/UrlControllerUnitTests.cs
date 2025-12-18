@@ -62,7 +62,7 @@ namespace UrlShortener.Tests
 
             var mockShortenUrl = new Mock<IShortenUrlService>();
             mockShortenUrl.Setup(x => x.ShortenUrlAsync(It.IsAny<UrlMappingDto>()))
-                .ReturnsAsync(new ShortenUrlResposeDto { ShortUrl = "https://www.test.com"});
+                .ReturnsAsync(new ShortenUrlResponseDto { ShortUrl = "https://www.test.com"});
 
             _controller = new UrlController(mockLogger.Object, mockAccessor.Object, mockExpandUrl.Object, mockShortenUrl.Object);
             _client = factory.CreateClient();
@@ -97,7 +97,7 @@ namespace UrlShortener.Tests
 
             //Act
             var result = await _controller.ShortenUrlAsync(dto) as OkObjectResult;
-            var response = Assert.IsType<ShortenUrlResposeDto>(result?.Value);
+            var response = Assert.IsType<ShortenUrlResponseDto>(result?.Value);
             var shortUrl = response.ShortUrl;
 
             //Assert
