@@ -4,6 +4,6 @@ namespace UrlShortener.Services.Interfaces
 {
     public interface IShortenUrlService
     {
-        Task<ShortenUrlResposeDto?> ShortenUrlAsync(UrlMappingDto model);
+        Task<ShortenUrlResponseDto?> ShortenUrlAsync(UrlMappingDto model);
     }
 }

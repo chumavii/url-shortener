@@ -40,7 +40,7 @@ namespace UrlShortener.Controllers
 
             var result = await _shortenUrl.ShortenUrlAsync(model);
             if (result == null)
-                return StatusCode(StatusCodes.Status500InternalServerError, "An unexpected error occured.");
+                return StatusCode(StatusCodes.Status500InternalServerError, "An unexpected error occurred.");
 
             return Ok(CreateShortenUrlResponse(result.ShortUrl, HttpContext));
         }
@@ -77,9 +77,9 @@ namespace UrlShortener.Controllers
         /*--------
          Helpers
         ---------*/
-        private ShortenUrlResposeDto CreateShortenUrlResponse(string shortCode, HttpContext context)
+        private ShortenUrlResponseDto CreateShortenUrlResponse(string shortCode, HttpContext context)
         {
-            return new ShortenUrlResposeDto
+            return new ShortenUrlResponseDto
             {
                 ShortUrl = DecorateShortCode(shortCode, context)
             };
